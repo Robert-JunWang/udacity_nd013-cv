@@ -4,6 +4,7 @@ import os
 import random
 
 import numpy as np
+import shutil
 
 from utils import get_module_logger
 
@@ -17,7 +18,28 @@ def split(source, destination):
         - source [str]: source data directory, contains the processed tf records
         - destination [str]: destination data directory, contains 3 sub folders: train / val / test
     """
-    # TODO: Implement function
+
+    train_dir = os.path.join(destination, 'train')
+    val_dir = os.path.join(destination, 'val') 
+
+    if not os.path.exists(train_dir):
+       os.makedirs(train_dir)
+    if not os.path.exists(val_dir):
+       os.makedirs(val_dir)
+
+
+    all_files = [filename for filename in glob.glob(f'{source}/*.tfrecord')]
+    np.random.shuffle(all_files)
+
+    train_files, val_files = np.split(all_files, [int(len(all_files)*0.8)])
+
+    logger.info('Total record: {}, train files: {}, val files: {}'.format(len(all_files), len(train_files), len(val_files)))
+
+    for data in train_files:
+        shutil.move(data, train_dir)
+
+    for data in val_files:
+        shutil.move(data, val_dir)
 
 
 if __name__ == "__main__":
