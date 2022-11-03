@@ -21,25 +21,31 @@ def split(source, destination):
 
     train_dir = os.path.join(destination, 'train')
     val_dir = os.path.join(destination, 'val') 
+    test_dir = os.path.join(destination, 'test') 
 
     if not os.path.exists(train_dir):
        os.makedirs(train_dir)
     if not os.path.exists(val_dir):
        os.makedirs(val_dir)
-
+    if not os.path.exists(test_dir):
+       os.makedirs(test_dir)
 
     all_files = [filename for filename in glob.glob(f'{source}/*.tfrecord')]
     np.random.shuffle(all_files)
 
+    # Train size: 80%, validation size: 20%
     train_files, val_files = np.split(all_files, [int(len(all_files)*0.8)])
 
     logger.info('Total record: {}, train files: {}, val files: {}'.format(len(all_files), len(train_files), len(val_files)))
 
-    for data in train_files:
-        shutil.move(data, train_dir)
+    # split the tf records by symbolically linking the files 
+    for src in train_files:
+        dst = os.path.join(train_dir, os.path.basename(src))
+        os.symlink(src, dst)
 
-    for data in val_files:
-        shutil.move(data, val_dir)
+    for src in val_files:
+        dst = os.path.join(val_dir, os.path.basename(src))
+        os.symlink(src, dst)
 
 
 if __name__ == "__main__":
