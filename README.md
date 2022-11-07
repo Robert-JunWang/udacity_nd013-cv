@@ -73,6 +73,7 @@ Dataset is very imblanced in terms of number of samples available for each class
 
 
 **Aspect ratio of bounding boxes**
+
 For the anchor based object detection method, the shape of the default anchors has a big contribution for the performance of the model. Analysis the aspect ratio of different classes might help to design a better shape of the default anchors. The aspect ratio is calculated by width/height of each bounding box. The shape is categoried to 5 range: less than 1/3, 1/3 to 1/2, 1/2 to 1, 1 to 5, larger than 5. 
 
 For vehicles, 54% aspect ratio is 1/2 to 1 and 36% aspect ratio is 1 to 5. 
@@ -112,7 +113,7 @@ python experiments/model_main_tf2.py --model_dir=experiments/reference/ --pipeli
 ![Loss](images/ref_loss.png)
 
 
-<img src="images/ref_lr.png" width=50% height=50%>
+<img src="images/ref_lr.png" width=30% height=30%>
 
 For the reference pipeline file, the mAP for IoU=0.50:0.95 is 0.092 and the mAP for IoU=0.50 is 0.183.
 
@@ -130,7 +131,7 @@ python experiments/model_main_tf2.py --model_dir=experiments/experiment3/ --pipe
 ![Loss](images/e3_loss.png)
 
 
-<img src="images/e3_lr.png" width=50% height=50%>
+<img src="images/e3_lr.png" width=30% height=30%>
 
 ![mAP](images/e3_map.png)
 
