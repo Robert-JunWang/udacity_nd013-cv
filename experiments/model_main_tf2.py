@@ -27,6 +27,8 @@ python model_main_tf2.py -- \
   --pipeline_config_path=$PIPELINE_CONFIG_PATH \
   --alsologtostderr
 """
+
+import os
 from absl import flags
 import tensorflow.compat.v2 as tf
 from object_detection import model_lib_v2
@@ -67,8 +69,127 @@ flags.DEFINE_integer(
 flags.DEFINE_boolean('record_summaries', True,
                      ('Whether or not to record summaries during'
                       ' training.'))
+flags.DEFINE_boolean('eval_all', False,'Whether or not to eval all available checkpoints')
 
 FLAGS = flags.FLAGS
+
+
+def eval_all_checkpoints(
+    pipeline_config_path,
+    config_override=None,
+    train_steps=None,
+    sample_1_of_n_eval_examples=1,
+    use_tpu=False,
+    override_eval_num_epochs=True,
+    postprocess_on_cpu=False,
+    model_dir=None,
+    checkpoint_dir=None,
+    eval_index=0,
+    **kwargs):
+  """Run continuous evaluation of a detection model eagerly.
+  This method builds the model, and continously restores it from the most
+  recent training checkpoint in the checkpoint directory & evaluates it
+  on the evaluation data.
+  Args:
+    pipeline_config_path: A path to a pipeline config file.
+    config_override: A pipeline_pb2.TrainEvalPipelineConfig text proto to
+      override the config from `pipeline_config_path`.
+    train_steps: Number of training steps. If None, the number of training steps
+      is set from the `TrainConfig` proto.
+    sample_1_of_n_eval_examples: Integer representing how often an eval example
+      should be sampled. If 1, will sample all examples.
+    sample_1_of_n_eval_on_train_examples: Similar to
+      `sample_1_of_n_eval_examples`, except controls the sampling of training
+      data for evaluation.
+    use_tpu: Boolean, whether training and evaluation should run on TPU.
+    override_eval_num_epochs: Whether to overwrite the number of epochs to 1 for
+      eval_input.
+    postprocess_on_cpu: When use_tpu and postprocess_on_cpu are true,
+      postprocess is scheduled on the host cpu.
+    model_dir: Directory to output resulting evaluation summaries to.
+    checkpoint_dir: Directory that contains the training checkpoints.
+    wait_interval: The mimmum number of seconds to wait before checking for a
+      new checkpoint.
+    timeout: The maximum number of seconds to wait for a checkpoint. Execution
+      will terminate if no new checkpoints are found after these many seconds.
+    eval_index: int, If given, only evaluate the dataset at the given
+      index. By default, evaluates dataset at 0'th index.
+    save_final_config: Whether to save the pipeline config file to the model
+      directory.
+    **kwargs: Additional keyword arguments for configuration override.
+  """
+  get_configs_from_pipeline_file = model_lib_v2.MODEL_BUILD_UTIL_MAP[
+      'get_configs_from_pipeline_file']
+  merge_external_params_with_configs = model_lib_v2.MODEL_BUILD_UTIL_MAP[
+      'merge_external_params_with_configs']
+
+  configs = get_configs_from_pipeline_file(
+      pipeline_config_path, config_override=config_override)
+  kwargs.update({
+      'sample_1_of_n_eval_examples': sample_1_of_n_eval_examples,
+      'use_bfloat16': configs['train_config'].use_bfloat16 and use_tpu
+  })
+  if train_steps is not None:
+    kwargs['train_steps'] = train_steps
+  if override_eval_num_epochs:
+    kwargs.update({'eval_num_epochs': 1})
+    print(
+        'Forced number of epochs for all eval validations to be 1.')
+  configs = merge_external_params_with_configs(
+      configs, None, kwargs_dict=kwargs)
+
+  model_config = configs['model']
+  eval_config = configs['eval_config']
+  eval_input_configs = configs['eval_input_configs']
+
+
+  if kwargs['use_bfloat16']:
+    tf.compat.v2.keras.mixed_precision.set_global_policy('mixed_bfloat16')
+
+  eval_input_config = eval_input_configs[eval_index]
+  strategy = tf.compat.v2.distribute.get_strategy()
+  with strategy.scope():
+    detection_model = model_lib_v2.MODEL_BUILD_UTIL_MAP['detection_model_fn_base'](
+        model_config=model_config, is_training=True)
+
+  eval_input = strategy.experimental_distribute_dataset(
+      model_lib_v2.inputs.eval_input(
+          eval_config=eval_config,
+          eval_input_config=eval_input_config,
+          model_config=model_config,
+          model=detection_model))
+
+  global_step = tf.compat.v2.Variable(
+      0, trainable=False, dtype=tf.compat.v2.dtypes.int64)
+
+  optimizer, _ = model_lib_v2.optimizer_builder.build(
+      configs['train_config'].optimizer, global_step=global_step)
+
+  checkpoint_state = tf.train.get_checkpoint_state(checkpoint_dir)
+  for checkpoint_file in checkpoint_state.all_model_checkpoint_paths:
+    print('Evaluating ', checkpoint_file)
+
+    ckpt = tf.compat.v2.train.Checkpoint(
+        step=global_step, model=detection_model, optimizer=optimizer)
+
+
+    ckpt.restore(checkpoint_file).expect_partial()
+
+    if eval_config.use_moving_averages:
+      optimizer.swap_weights()
+
+    summary_writer = tf.compat.v2.summary.create_file_writer(
+        os.path.join(model_dir, 'eval', eval_input_config.name))
+    with summary_writer.as_default():
+      model_lib_v2.eager_eval_loop(
+          detection_model,
+          configs,
+          eval_input,
+          use_tpu=use_tpu,
+          postprocess_on_cpu=postprocess_on_cpu,
+          global_step=global_step,
+          )
+
 
 
 def main(unused_argv):
@@ -77,15 +198,23 @@ def main(unused_argv):
   tf.config.set_soft_device_placement(True)
 
   if FLAGS.checkpoint_dir:
-    model_lib_v2.eval_continuously(
-        pipeline_config_path=FLAGS.pipeline_config_path,
-        model_dir=FLAGS.model_dir,
-        train_steps=FLAGS.num_train_steps,
-        sample_1_of_n_eval_examples=FLAGS.sample_1_of_n_eval_examples,
-        sample_1_of_n_eval_on_train_examples=(
-            FLAGS.sample_1_of_n_eval_on_train_examples),
-        checkpoint_dir=FLAGS.checkpoint_dir,
-        wait_interval=300, timeout=FLAGS.eval_timeout)
+    if FLAGS.eval_all:
+      print('eval all checkpoints')
+      eval_all_checkpoints(
+          pipeline_config_path=FLAGS.pipeline_config_path,
+          model_dir=FLAGS.model_dir,
+          train_steps=FLAGS.num_train_steps,
+          checkpoint_dir=FLAGS.checkpoint_dir)
+    else:
+      model_lib_v2.eval_continuously(
+          pipeline_config_path=FLAGS.pipeline_config_path,
+          model_dir=FLAGS.model_dir,
+          train_steps=FLAGS.num_train_steps,
+          sample_1_of_n_eval_examples=FLAGS.sample_1_of_n_eval_examples,
+          sample_1_of_n_eval_on_train_examples=(
+              FLAGS.sample_1_of_n_eval_on_train_examples),
+          checkpoint_dir=FLAGS.checkpoint_dir,
+          wait_interval=300, timeout=FLAGS.eval_timeout)
   else:
     if FLAGS.use_tpu:
       # TPU is automatically inferred if tpu_name is None and

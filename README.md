@@ -1,44 +1,12 @@
 # Object Detection in an Urban Environment
 
-## Data
+## Submission 
 
-For this project, we will be using data from the [Waymo Open dataset](https://waymo.com/open/).
+### Project overview
+This project is to develop a deep learning model to detect vehicles, pedestrians and cyclists in an urban environment by a single image.
 
-[OPTIONAL] - The files can be downloaded directly from the website as tar files or from the [Google Cloud Bucket](https://console.cloud.google.com/storage/browser/waymo_open_dataset_v_1_2_0_individual_files/) as individual tf records. We have already provided the data required to finish this project in the workspace, so you don't need to download it separately.
-
-## Structure
-
-### Data
-
-The data you will use for training, validation and testing is organized as follow:
-```
-/home/workspace/data/waymo
-    - training_and_validation - contains 97 files to train and validate your models
-    - train: contain the train data (empty to start)
-    - val: contain the val data (empty to start)
-    - test - contains 3 files to test your model and create inference videos
-```
-
-The `training_and_validation` folder contains file that have been downsampled: we have selected one every 10 frames from 10 fps videos. The `testing` folder contains frames from the 10 fps video without downsampling.
-
-You will split this `training_and_validation` data into `train`, and `val` sets by completing and executing the `create_splits.py` file.
-
-### Experiments
-The experiments folder will be organized as follow:
-```
-experiments/
-    - pretrained_model/
-    - exporter_main_v2.py - to create an inference model
-    - model_main_tf2.py - to launch training
-    - reference/ - reference training with the unchanged config file
-    - experiment0/ - create a new folder for each experiment you run
-    - experiment1/ - create a new folder for each experiment you run
-    - experiment2/ - create a new folder for each experiment you run
-    - label_map.pbtxt
-    ...
-```
-
-## Prerequisites
+### Set up
+I use my local laptop for this project since the Udacity workspace always complains about a lack of space after 3500 steps of training.
 
 ### Local Setup
 
@@ -63,13 +31,6 @@ You are downloading 100 files (unless you changed the `size` parameter) so be pa
 
 In the classroom workspace, every library and package should already be installed in your environment. You will NOT need to make use of `gcloud` to download the images.
 
-## Instructions
-
-### Exploratory Data Analysis
-
-You should use the data already present in `/home/workspace/data/waymo` directory to explore the dataset! This is the most important task of any machine learning project. To do so, open the `Exploratory Data Analysis` notebook. In this notebook, your first task will be to implement a `display_instances` function to display images and annotations using `matplotlib`. This should be very similar to the function you created during the course. Once you are done, feel free to spend more time exploring the data and report your findings. Report anything relevant about the dataset in the writeup.
-
-Keep in mind that you should refer to this analysis to create the different spits (training, testing and validation).
 
 
 ### Create the training - validation splits
@@ -79,7 +40,7 @@ In the class, we talked about cross-validation and the importance of creating me
 
 Use the following command to run the script once your function is implemented:
 ```
-python create_splits.py --data-dir /home/workspace/data
+python create_splits.py --source data/waymo/processed --destination data
 ```
 
 ### Edit the config file
@@ -90,13 +51,53 @@ First, let's download the [pretrained model](http://download.tensorflow.org/mode
 
 We need to edit the config files to change the location of the training and validation files, as well as the location of the label_map file, pretrained weights. We also need to adjust the batch size. To do so, run the following:
 ```
-python edit_config.py --train_dir /home/workspace/data/train/ --eval_dir /home/workspace/data/val/ --batch_size 2 --checkpoint /home/workspace/experiments/pretrained_model/ssd_resnet50_v1_fpn_640x640_coco17_tpu-8/checkpoint/ckpt-0 --label_map /home/workspace/experiments/label_map.pbtxt
+python edit_config.py --train_dir /home/workspace/data/train/ --eval_dir /home/workspace/data/val/ --batch_size 8 --checkpoint /home/workspace/experiments/pretrained_model/ssd_resnet50_v1_fpn_640x640_coco17_tpu-8/checkpoint/ckpt-0 --label_map /home/workspace/experiments/label_map.pbtxt
 ```
 A new config file has been created, `pipeline_new.config`.
 
+### Dataset
+#### Exploring dataset
+| ![](images/openwaymo001.png)  |  ![](images/openwaymo002.png) |
+:-------------------------:|:-------------------------:
+| ![](images/openwaymo003.png)  |  ![](images/openwaymo004.png) |
+
+#### Dataset analysis
+
+There are 3k random samples used for analysis.
+
+**Distribution of classes**
+
+Dataset is very imblanced in terms of number of samples available for each class. Class 1 of vehicles have maximum samples. Class 4 of cyclists is very rare in the dataset, followed by Class 2 of pedestrians.
+
+<img src="images/class_count.png" width=50% height=50%>
+
+
+**Aspect ratio of bounding boxes**
+For the anchor based object detection method, the shape of the default anchors has a big contribution for the performance of the model. Analysis the aspect ratio of different classes might help to design a better shape of the default anchors. The aspect ratio is calculated by width/height of each bounding box. The shape is categoried to 5 range: less than 1/3, 1/3 to 1/2, 1/2 to 1, 1 to 5, larger than 5. 
+
+For vehicles, 54% aspect ratio is 1/2 to 1 and 36% aspect ratio is 1 to 5. 
+    <img src="images/aspect_ratio_vehicles.png" width=50% height=50%>
+
+For pedestrians, 62% aspect ratio is less than 1/3, 25% aspect ration is 1/3 to 1/2 and 13% is 1/2 to 1. 
+
+<img src="images/aspect_ratio_pedestrians.png" width=50% height=50%>
+
+For cyclists, 44% is less than 1/3, 29% is less than 1/2 to 1 and 29% is 1/2 to 1. 
+    <img src="images/aspect_ratio_cyclists.png" width=50% height=50%>
+
+
+
 ### Training
 
-You will now launch your very first experiment with the Tensorflow object detection API. Move the `pipeline_new.config` to the `/home/workspace/experiments/reference` folder. Now launch the training process:
+Since the GPU memory of my laptop is limited. I cannot run training and evaluate at the same time. I can only run evaluation after the training job is done. By default, when running experiments/model_main_tf2.py for evaluation, only the last saved checkpoint is loaded. I added another option eval_all and a method called eval_all_checkpoints to experiments/model_main_tf2.py. If eval_all option is enabled, all saved checkpoints are evaluated. 
+
+#### Reference experiment
+
+
+The reference model is trained with the batch size 2 and the learning rate is adjusted to 0.00005. The total step is set to 5000. The optimizer is SGD with momentum. The learning rate decay is cosine anealing.   
+
+Model and training hyperparameters are defined using a file, pipeline_new.config.
+You can make changes in this config file, then move the `pipeline_new.config` to the `/home/workspace/experiments/reference` folder. Now launch the training process:
 * a training process:
 ```
 python experiments/model_main_tf2.py --model_dir=experiments/reference/ --pipeline_config_path=experiments/reference/pipeline_new.config
@@ -107,54 +108,79 @@ Once the training is finished, launch the evaluation process:
 python experiments/model_main_tf2.py --model_dir=experiments/reference/ --pipeline_config_path=experiments/reference/pipeline_new.config --checkpoint_dir=experiments/reference/
 ```
 
-**Note**: Both processes will display some Tensorflow warnings, which can be ignored. You may have to kill the evaluation script manually using
-`CTRL+C`.
 
-To monitor the training, you can launch a tensorboard instance by running `python -m tensorboard.main --logdir experiments/reference/`. You will report your findings in the writeup.
+![Loss](images/ref_loss.png)
 
-### Improve the performances
 
-Most likely, this initial experiment did not yield optimal results. However, you can make multiple changes to the config file to improve this model. One obvious change consists in improving the data augmentation strategy. The [`preprocessor.proto`](https://github.com/tensorflow/models/blob/master/research/object_detection/protos/preprocessor.proto) file contains the different data augmentation method available in the Tf Object Detection API. To help you visualize these augmentations, we are providing a notebook: `Explore augmentations.ipynb`. Using this notebook, try different data augmentation combinations and select the one you think is optimal for our dataset. Justify your choices in the writeup.
+<img src="images/ref_lr.png" width=50% height=50%>
 
-Keep in mind that the following are also available:
-* experiment with the optimizer: type of optimizer, learning rate, scheduler etc
-* experiment with the architecture. The Tf Object Detection API [model zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md) offers many architectures. Keep in mind that the `pipeline.config` file is unique for each architecture and you will have to edit it.
+For the reference pipeline file, the mAP for IoU=0.50:0.95 is 0.092 and the mAP for IoU=0.50 is 0.183.
 
-**Important:** If you are working on the workspace, your storage is limited. You may to delete the checkpoints files after each experiment. You should however keep the `tf.events` files located in the `train` and `eval` folder of your experiments. You can also keep the `saved_model` folder to create your videos.
+![mAP](images/ref_map.png)
+
+
+![AR](images/ref_ar.png)
+
+#### Improve on the reference
+To improve the performance, I applied many different augmentations. Meanwhile, the learning rate is adjusted to 0.001333 and the warmup learning rate is set to 0.0004.With these settings, the mAP for IoU=0.50:0.95 is improved to 0.120 and the mAP for IoU=0.50 is 0.25. I then use another pipeline file with a larger training step ( 26000 instead of 5000), A model trained with this new pipeline has a better performance. The mAP for IoU=0.50:0.95 is 0.142 and the mAP for IoU=0.50 is 0.282.
+* a training process:
+```
+python experiments/model_main_tf2.py --model_dir=experiments/experiment3/ --pipeline_config_path=experiments/experiment3/pipeline_new.config
+```
+![Loss](images/e3_loss.png)
+
+
+<img src="images/e3_lr.png" width=50% height=50%>
+
+![mAP](images/e3_map.png)
+
+
+![AR](images/e3_ar.png)
+ 
+**Augmentation strategies:**
+1. random_horizontal_flip
+2. random_crop_image
+3. random_adjust_brightness
+4. random_adjust_contrast
+5. random_adjust_hue
+6. random_adjust_saturation
+7. random_distort_color
+
+
+| ![](images/augmented1.png)  |  ![](images/augmented2.png) |
+:-------------------------:|:-------------------------:
+| ![](images/augmented3.png)  |  ![](images/augmented4.png) |
+
 
 
 ### Creating an animation
+
 #### Export the trained model
+
 Modify the arguments of the following function to adjust it to your models:
 
 ```
-python experiments/exporter_main_v2.py --input_type image_tensor --pipeline_config_path experiments/reference/pipeline_new.config --trained_checkpoint_dir experiments/reference/ --output_directory experiments/reference/exported/
+python experiments/exporter_main_v2.py --input_type image_tensor --pipeline_config_path experiments/experiment3/pipeline_new.config --trained_checkpoint_dir experiments/experiment3/ --output_directory experiments/experiment3/exported/
 ```
 
 This should create a new folder `experiments/reference/exported/saved_model`. You can read more about the Tensorflow SavedModel format [here](https://www.tensorflow.org/guide/saved_model).
 
-Finally, you can create a video of your model's inferences for any tf record file. To do so, run the following command (modify it to your files):
+Finally, you can create a video of your model's inferences for any tf record file. To do so, run the following command:
 ```
-python inference_video.py --labelmap_path label_map.pbtxt --model_path experiments/reference/exported/saved_model --tf_record_path /data/waymo/testing/segment-12200383401366682847_2552_140_2572_140_with_camera_labels.tfrecord --config_path experiments/reference/pipeline_new.config --output_path animation.gif
+python inference_video.py --labelmap_path label_map.pbtxt --model_path experiments/experiment3/exported/saved_model --tf_record_path data/test/segment-12012663867578114640_820_000_840_000_with_camera_labels.tfrecord --config_path experiments/reference/pipeline_new.config --output_path images/animation1.gif
+```
+```
+python inference_video.py --labelmap_path label_map.pbtxt --model_path experiments/experiment3/exported/saved_model --tf_record_path data/test/segment-12200383401366682847_2552_140_2572_140_with_camera_labels.tfrecord --config_path experiments/reference/pipeline_new.config --output_path images/animation2.gif
 ```
 
-## Submission Template
+```
+python inference_video.py --labelmap_path label_map.pbtxt --model_path experiments/experiment3/exported/saved_model --tf_record_path data/test/segment-1208303279778032257_1360_000_1380_000_with_camera_labels.tfrecord --config_path experiments/reference/pipeline_new.config --output_path images/animation3.gif
+```
 
-### Project overview
-This section should contain a brief description of the project and what we are trying to achieve. Why is object detection such an important component of self driving car systems?
+<!-- ## Test results
 
-### Set up
-This section should contain a brief description of the steps to follow to run the code for this repository.
+![](images/animation1.gif)
 
-### Dataset
-#### Dataset analysis
-This section should contain a quantitative and qualitative description of the dataset. It should include images, charts and other visualizations.
-#### Cross validation
-This section should detail the cross validation strategy and justify your approach.
+![](images/animation2.gif)
 
-### Training
-#### Reference experiment
-This section should detail the results of the reference experiment. It should includes training metrics and a detailed explanation of the algorithm's performances.
-
-#### Improve on the reference
-This section should highlight the different strategies you adopted to improve your model. It should contain relevant figures and details of your findings.
+![](images/animation3.gif) -->
